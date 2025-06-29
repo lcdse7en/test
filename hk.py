@@ -13,16 +13,12 @@ class Loan:
         years: int,
         payments_per_year: int = 12,
         loan_type: str = "equal_payment",  # "equal_payment" 或 "equal_principal"
-        prepayment: Dict[int, float] = None,  # {期数: 提前还款金额}
-        full_prepayment_at: int = None,  # 第 N 期一次性提前结清
     ):
         self.principal = principal
         self.annual_rate = annual_rate
         self.years = years
         self.payments_per_year = payments_per_year
         self.loan_type = loan_type
-        self.prepayment = prepayment or {}
-        self.full_prepayment_at = full_prepayment_at
 
         self.period_rate = self.annual_rate / self.payments_per_year
         self.total_periods = self.years * self.payments_per_year
@@ -47,9 +43,6 @@ class Loan:
         equal_principal = balance / N if self.loan_type == "equal_principal" else None
 
         for period in range(1, int(N) + 1):
-            if balance <= 0:
-                break
-
             interest = balance * i
 
             if self.loan_type == "equal_payment":
@@ -59,21 +52,8 @@ class Loan:
                 principal_payment = equal_principal
                 total_payment = principal_payment + interest
 
-            extra_prepayment = self.prepayment.get(period, 0)
-            principal_payment += extra_prepayment
-            total_payment += extra_prepayment
-
             balance -= principal_payment
             balance = max(balance, 0)
-
-            if (
-                self.full_prepayment_at
-                and period == self.full_prepayment_at
-                and balance > 0
-            ):
-                total_payment += balance
-                principal_payment += balance
-                balance = 0
 
             schedule.append(
                 {
@@ -84,9 +64,6 @@ class Loan:
                     "Remaining Balance": round(balance, 2),
                 }
             )
-
-            if balance <= 0:
-                break
 
         return schedule
 
@@ -107,9 +84,6 @@ class Loan:
             print(f"每期还款：{self.payment:.2f} 元")
         print(f"总还款：{total_payment:.2f} 元")
         print(f"总利息：{total_interest:.2f} 元")
-        if total_interest < origin_interest:
-            saved = origin_interest - total_interest
-            print(f"✅ 提前还款节省利息：{saved:.2f} 元")
         print("===================================")
 
     def _calculate_original_interest(self):
@@ -168,18 +142,6 @@ class Loan:
                 ["总利息", df["Interest Payment"].sum()],
             ]
 
-            if self.prepayment:
-                summary_info.append(["提前还款", str(self.prepayment)])
-            if self.full_prepayment_at:
-                summary_info.append(
-                    ["一次性提前结清", f"第 {self.full_prepayment_at} 期"]
-                )
-
-            origin_interest = self._calculate_original_interest()
-            current_interest = df["Interest Payment"].sum()
-            if current_interest < origin_interest:
-                summary_info.append(["节省利息", origin_interest - current_interest])
-
             summary_start = len(df) + 4
             for idx, (label, value) in enumerate(summary_info):
                 worksheet.cell(row=summary_start + idx, column=1, value=label)
@@ -208,22 +170,18 @@ class Loan:
                 for cell in row:
                     cell.border = thin_border
 
-            # 设置金额列数字格式（千分位+两位小数）
             money_cols = [
                 "Principal Payment",
                 "Interest Payment",
                 "Total Payment",
                 "Remaining Balance",
             ]
-            col_index_map = {
-                col: idx + 1 for idx, col in enumerate(df.columns)
-            }  # Excel列从1开始
+            col_index_map = {col: idx + 1 for idx, col in enumerate(df.columns)}
             for col in money_cols:
                 col_letter = get_column_letter(col_index_map[col])
-                for row in range(2, len(df) + 2):  # 从第2行开始，跳过表头
+                for row in range(2, len(df) + 2):
                     worksheet[f"{col_letter}{row}"].number_format = "#,##0.00"
 
-            # 自动列宽
             for column_cells in worksheet.columns:
                 length = max(
                     len(str(cell.value)) if cell.value is not None else 0
@@ -233,7 +191,6 @@ class Loan:
                     get_column_letter(column_cells[0].column)
                 ].width = length + 2
 
-            # 冻结表头
             worksheet.freeze_panes = "A2"
 
             print(f"\n✅ 已导出美化 Excel（带千分位）：{filename}")
@@ -279,20 +236,14 @@ class Loan:
         plt.show()
 
 def main():
-    # 示例：等额本息 + 提前部分还款 + 一次性提前结清
     loan = Loan(
-        principal=1000000,
-        annual_rate=0.048,
-        years=30,
-        loan_type="equal_payment",
-        prepayment={12: 50000, 24: 30000},  # 第12期提前5万，第24期提前3万
-        full_prepayment_at=60,  # 第60期一次性还清
+        principal=1000000, annual_rate=0.048, years=30, loan_type="equal_payment"
     )
 
     loan.summary()
     loan.print_schedule()
-    loan.export_to_excel("loan_schedule.xlsx")
-    loan.plot("loan_schedule_plot.png")
+    loan.export_to_excel("loan_schedule_no_prepayment.xlsx")
+    loan.plot("loan_schedule_no_prepayment_plot.png")
 
 if __name__ == "__main__":
     main()

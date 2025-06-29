@@ -71,7 +71,6 @@ class Loan:
         schedule = self.generate_schedule()
         total_payment = sum(item["Total Payment"] for item in schedule)
         total_interest = sum(item["Interest Payment"] for item in schedule)
-        origin_interest = self._calculate_original_interest()
 
         print("\n========== Loan Summary ==========")
         print(f"贷款本金：{self.principal} 元")
@@ -85,28 +84,6 @@ class Loan:
         print(f"总还款：{total_payment:.2f} 元")
         print(f"总利息：{total_interest:.2f} 元")
         print("===================================")
-
-    def _calculate_original_interest(self):
-        balance = self.principal
-        i = self.period_rate
-        N = self.total_periods
-        total_interest = 0
-
-        if self.loan_type == "equal_payment":
-            A = self._calculate_equal_payment()
-            for _ in range(int(N)):
-                interest = balance * i
-                principal_payment = A - interest
-                balance -= principal_payment
-                total_interest += interest
-        else:
-            principal_payment = balance / N
-            for _ in range(int(N)):
-                interest = balance * i
-                balance -= principal_payment
-                total_interest += interest
-
-        return round(total_interest, 2)
 
     def print_schedule(self):
         schedule = self.generate_schedule()
@@ -124,6 +101,16 @@ class Loan:
         schedule = self.generate_schedule()
         df = pd.DataFrame(schedule)
 
+        # 先四舍五入金额列两位小数，避免浮点显示问题
+        money_cols = [
+            "Principal Payment",
+            "Interest Payment",
+            "Total Payment",
+            "Remaining Balance",
+        ]
+        for col in money_cols:
+            df[col] = df[col].round(2)
+
         with pd.ExcelWriter(filename, engine="openpyxl") as writer:
             df.to_excel(writer, sheet_name="Loan Schedule", index=False)
             workbook = writer.book
@@ -138,8 +125,8 @@ class Loan:
                     "等额本息" if self.loan_type == "equal_payment" else "等额本金",
                 ],
                 ["每期还款", self.payment if self.payment else "不同"],
-                ["总还款", df["Total Payment"].sum()],
-                ["总利息", df["Interest Payment"].sum()],
+                ["总还款", df["Total Payment"].sum().round(2)],
+                ["总利息", df["Interest Payment"].sum().round(2)],
             ]
 
             summary_start = len(df) + 4
@@ -170,18 +157,26 @@ class Loan:
                 for cell in row:
                     cell.border = thin_border
 
-            money_cols = [
-                "Principal Payment",
-                "Interest Payment",
-                "Total Payment",
-                "Remaining Balance",
-            ]
-            col_index_map = {col: idx + 1 for idx, col in enumerate(df.columns)}
+            col_index_map = {
+                col: idx + 1 for idx, col in enumerate(df.columns)
+            }  # 列名映射列号
+
+            # “Period”列居中
+            period_col = "Period"
+            period_col_letter = get_column_letter(col_index_map[period_col])
+            for row in range(2, len(df) + 2):
+                cell = worksheet[f"{period_col_letter}{row}"]
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+
+            # 金额列千分位+两位小数，右对齐
             for col in money_cols:
                 col_letter = get_column_letter(col_index_map[col])
                 for row in range(2, len(df) + 2):
-                    worksheet[f"{col_letter}{row}"].number_format = "#,##0.00"
+                    cell = worksheet[f"{col_letter}{row}"]
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = Alignment(horizontal="right", vertical="center")
 
+            # 自动列宽
             for column_cells in worksheet.columns:
                 length = max(
                     len(str(cell.value)) if cell.value is not None else 0
@@ -191,9 +186,12 @@ class Loan:
                     get_column_letter(column_cells[0].column)
                 ].width = length + 2
 
+            # 冻结表头
             worksheet.freeze_panes = "A2"
 
-            print(f"\n✅ 已导出美化 Excel（带千分位）：{filename}")
+            print(
+                f"\n✅ 已导出美化 Excel（期数列居中，金额列千分位+两位小数）：{filename}"
+            )
 
     def plot(self, save_path: str = "loan_plot.png"):
         schedule = self.generate_schedule()
@@ -242,8 +240,8 @@ def main():
 
     loan.summary()
     loan.print_schedule()
-    loan.export_to_excel("loan_schedule_no_prepayment.xlsx")
-    loan.plot("loan_schedule_no_prepayment_plot.png")
+    loan.export_to_excel("loan_schedule.xlsx")
+    loan.plot("loan_schedule_plot.png")
 
 if __name__ == "__main__":
     main()

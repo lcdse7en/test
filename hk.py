@@ -2,7 +2,6 @@ from typing import Dict, List
 
 import matplotlib.pyplot as plt
 import pandas as pd
-from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
@@ -13,9 +12,9 @@ class Loan:
         annual_rate: float,
         years: int,
         payments_per_year: int = 12,
-        loan_type: str = "equal_payment",
-        prepayment: Dict[int, float] = None,
-        full_prepayment_at: int = None,
+        loan_type: str = "equal_payment",  # "equal_payment" 或 "equal_principal"
+        prepayment: Dict[int, float] = None,  # {期数: 提前还款金额}
+        full_prepayment_at: int = None,  # 第 N 期一次性提前结清
     ):
         self.principal = principal
         self.annual_rate = annual_rate
@@ -209,6 +208,22 @@ class Loan:
                 for cell in row:
                     cell.border = thin_border
 
+            # 设置金额列数字格式（千分位+两位小数）
+            money_cols = [
+                "Principal Payment",
+                "Interest Payment",
+                "Total Payment",
+                "Remaining Balance",
+            ]
+            col_index_map = {
+                col: idx + 1 for idx, col in enumerate(df.columns)
+            }  # Excel列从1开始
+            for col in money_cols:
+                col_letter = get_column_letter(col_index_map[col])
+                for row in range(2, len(df) + 2):  # 从第2行开始，跳过表头
+                    worksheet[f"{col_letter}{row}"].number_format = "#,##0.00"
+
+            # 自动列宽
             for column_cells in worksheet.columns:
                 length = max(
                     len(str(cell.value)) if cell.value is not None else 0
@@ -218,11 +233,12 @@ class Loan:
                     get_column_letter(column_cells[0].column)
                 ].width = length + 2
 
+            # 冻结表头
             worksheet.freeze_panes = "A2"
 
-            print(f"\n✅ 已导出美化 Excel：{filename}")
+            print(f"\n✅ 已导出美化 Excel（带千分位）：{filename}")
 
-    def plot(self):
+    def plot(self, save_path: str = "loan_plot.png"):
         schedule = self.generate_schedule()
         df = pd.DataFrame(schedule)
 
@@ -256,6 +272,10 @@ class Loan:
         plt.grid(True, linestyle="--", alpha=0.7)
         plt.legend()
         plt.tight_layout()
+
+        plt.savefig(save_path, dpi=300)
+        print(f"✅ 图表已保存为：{save_path}")
+
         plt.show()
 
 def main():
@@ -272,7 +292,7 @@ def main():
     loan.summary()
     loan.print_schedule()
     loan.export_to_excel("loan_schedule.xlsx")
-    loan.plot()
+    loan.plot("loan_schedule_plot.png")
 
 if __name__ == "__main__":
     main()
